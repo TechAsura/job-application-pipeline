@@ -1,0 +1,418 @@
+{
+  "name": "Job Tracker",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const subject = item.json.Subject || \"\";\n  const snippet = item.json.snippet || \"\";\n  const emailId = item.json.id || \"\";\n  const date = item.json.internalDate || \"\";\n  const from = item.json.From || \"\";\n\n  // Skip non-job emails\n  const jobKeywords = [\"hiring\", \"job\", \"position\", \"role\", \"opportunity\", \"career\", \"apply\", \"helpdesk\", \"administrator\", \"technician\", \"analyst\", \"support\"];\n  const isJobEmail = jobKeywords.some(k => subject.toLowerCase().includes(k) || snippet.toLowerCase().includes(k));\n  \n  if (!isJobEmail) continue;\n\n  // Determine source\n  const source = from.includes(\"indeed\") ? \"Indeed\" : \"LinkedIn\";\n\n  // Parse subject\n  let jobTitle = subject;\n  let company = \"Unknown\";\n\n  if (source === \"Indeed\") {\n    const parts = subject.split(\" @ \");\n    jobTitle = parts[0]?.trim() || subject;\n    company = parts[1]?.trim() || \"Unknown\";\n  } else {\n    jobTitle = subject.replace(/:\\s.+hiring$/, \"\").trim();\n    const companyMatch = subject.match(/:\\s(.+?)\\s(and|is|are)\\s/);\n    company = companyMatch ? companyMatch[1].trim() : \"See listing\";\n  }\n\n  results.push({\n    json: {\n      emailId,\n      jobTitle,\n      company,\n      snippet: snippet.replace(/͏/g, \"\").trim(),\n      date: new Date(parseInt(date)).toISOString(),\n      source\n    }\n  });\n}\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "b5f2ce5e-6a27-44b4-9f8b-d5c246bb5e3e",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "databaseId": {
+          "__rl": true,
+          "value": "35b1ac89-aebc-804b-b492-c3c584326802",
+          "mode": "list",
+          "cachedResultName": "Job Applications",
+          "cachedResultUrl": "https://www.notion.so/35b1ac89aebc804bb492c3c584326802"
+        },
+        "title": "={{ $json.jobTitle }}",
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "company|title",
+              "title": "={{ $json.company }}"
+            },
+            {
+              "key": "job_id|rich_text",
+              "textContent": "={{ $json.emailId }}"
+            },
+            {
+              "key": "source|select",
+              "selectValue": "={{ $json.source }}"
+            },
+            {
+              "key": "jd_text|rich_text",
+              "textContent": "={{ $json.snippet }}"
+            },
+            {
+              "key": "status|select",
+              "selectValue": "New"
+            },
+            {
+              "key": "applied_date|date",
+              "includeTime": false,
+              "date": "={{ $json.date }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        848,
+        0
+      ],
+      "id": "e05ba59b-95c0-45ce-ae3e-34e6abbaebb3",
+      "name": "Create a database page",
+      "credentials": {
+        "notionApi": {
+          "id": "IL8JXiMWf8OeSXbS",
+          "name": "Notion account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "YOUR_ANTHROPIC_API_KEY"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-5\",\n  \"max_tokens\": 1000,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"You are a job application assistant for Elijah Robinson (GitHub: github.com/TechAsura). Here is his resume: Elijah Robinson is a Software Engineering (AI) student in his final semester at Centennial College. He built and maintains a two-node Proxmox VE homelab running 10+ self-hosted services including Jellyfin, AdGuard Home, Nginx Proxy Manager, Sonarr, Radarr, Uptime Kuma, and Jellyseerr. He configured ZFS storage pools with NFS exports, implemented NordVPN with kill switch in isolated LXC, managed DNS via AdGuard Home with DoH, and troubleshot SMB/NFS mount issues and LXC bind mount permission conflicts. He also built and deployed MapleLog (maplelog.co), a live B2B SaaS platform for Canadian SMBs using Next.js, TypeScript, Supabase, Stripe, and Vercel. He built an automated job application pipeline using n8n, the Claude API, and Notion on a self-hosted VPS. Skills include Linux (Ubuntu/Debian), Proxmox VE, LXC, KVM, DNS, DHCP, TCP/IP, VLANs, WireGuard, Tailscale, Nginx, ZFS, NFS, SMB, Python, JavaScript, Docker basics, Git/GitHub. CompTIA A+ in progress. All infrastructure is documented and version-controlled at github.com/TechAsura. Given the following job posting, generate 3 tailored resume bullet points that reference his specific projects and tools, and 1 cover letter paragraph that mentions his GitHub where relevant. Job Title: {{ $('Code in JavaScript').item.json.jobTitle }} Company: {{ $('Code in JavaScript').item.json.company }} Job Description: {{ $('Code in JavaScript').item.json.snippet }} Respond ONLY in this exact format: BULLETS: - bullet 1 - bullet 2 - bullet 3 COVER_LETTER: paragraph here\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1040,
+        0
+      ],
+      "id": "ca1fe25c-fe3f-4b2d-90a9-da5fc6fd1dc4",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "update",
+        "pageId": {
+          "__rl": true,
+          "value": "={{ $('Create a database page').item.json.id }}",
+          "mode": "id"
+        },
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "tailored_bullets|rich_text",
+              "textContent": "={{ $('HTTP Request').item.json.content[0].text.split('COVER_LETTER:')[0].replace('BULLETS:','').trim() }}"
+            },
+            {
+              "key": "cover_letter|rich_text",
+              "textContent": "={{ $('HTTP Request').item.json.content[0].text.split('COVER_LETTER:')[1].trim() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        1248,
+        0
+      ],
+      "id": "915cc5c5-da7f-47d3-ac1d-f0b282be8578",
+      "name": "Update a database page",
+      "credentials": {
+        "notionApi": {
+          "id": "IL8JXiMWf8OeSXbS",
+          "name": "Notion account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "value": "35b1ac89-aebc-804b-b492-c3c584326802",
+          "mode": "list",
+          "cachedResultName": "Job Applications",
+          "cachedResultUrl": "https://www.notion.so/35b1ac89aebc804bb492c3c584326802"
+        },
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "key": "job_id|rich_text",
+              "condition": "equals",
+              "richTextValue": "={{ $json.emailId }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        416,
+        0
+      ],
+      "id": "9784601a-3e7f-46b8-adfe-e63a6ed00217",
+      "name": "Get many database pages",
+      "credentials": {
+        "notionApi": {
+          "id": "IL8JXiMWf8OeSXbS",
+          "name": "Notion account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f4dd360c-f447-4215-878e-fc8b8d027a1f",
+              "leftValue": "={{ $items().length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        624,
+        0
+      ],
+      "id": "bc6f6efa-fd4d-457e-af7c-da18c93d323e",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyX",
+              "value": 15,
+              "unit": "minutes"
+            }
+          ]
+        },
+        "filters": {
+          "sender": "messages-noreply@linkedin.com"
+        }
+      },
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        32,
+        144
+      ],
+      "id": "cb6de55b-3f18-4804-af66-f677f0786add",
+      "name": "LinkedIn",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "usDqm2Fnec5VJAEG",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyX",
+              "value": 15,
+              "unit": "minutes"
+            }
+          ]
+        },
+        "filters": {
+          "sender": "donotreply@match.indeed.com"
+        }
+      },
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        32,
+        0
+      ],
+      "id": "6b05fee8-3158-47f3-bc3d-63211bc4a85f",
+      "name": "Indeed",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "usDqm2Fnec5VJAEG",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://ntfy.sh/YOUR_NTFY_TOPIC",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Title",
+              "value": "={{ $('Code in JavaScript').item.json.jobTitle }} @ {{ $('Code in JavaScript').item.json.company }}"
+            },
+            {
+              "name": "Priority",
+              "value": "high"
+            },
+            {
+              "name": "Tags",
+              "value": "briefcase"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "plain/text",
+        "body": "={{ $('Code in JavaScript').item.json.source }} — new job alert  {{ $('Code in JavaScript').item.json.snippet }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1456,
+        0
+      ],
+      "id": "5bdc61c2-1362-418b-b03d-c3809efe07ce",
+      "name": "HTTP Request1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Get many database pages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create a database page": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Update a database page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get many database pages": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Create a database page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LinkedIn": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Indeed": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update a database page": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "dfe3a2ec-49cc-48a1-802c-11a6cfb2cc31",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "0ae9ebcf38fe7f281bdb455ddcc3981ecc52c6793884043d310fff6d9c188d2a"
+  },
+  "id": "j91KUG85KWS7eNHP",
+  "tags": []
+}
