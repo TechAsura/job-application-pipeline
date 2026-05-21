@@ -1,6 +1,6 @@
 # Automated Job Application Pipeline
 
-An end-to-end job hunting automation system that monitors Gmail for job alerts, parses listings, checks for duplicates, generates tailored resume bullets and cover letters using the Claude API, and logs everything to a Notion database — automatically, every 15 minutes.
+An end-to-end job hunting automation system that monitors Gmail for job alerts from Indeed and LinkedIn, parses listings, deduplicates, generates tailored resume bullets and cover letters using the Claude API, logs everything to Notion, and sends instant push notifications via ntfy — automatically, every 15 minutes.
 
 Built and deployed on a self-hosted VPS using n8n.
 
@@ -9,37 +9,45 @@ Built and deployed on a self-hosted VPS using n8n.
 ## What It Does
 
 1. **Monitors Gmail** for job alert emails from Indeed and LinkedIn every 15 minutes
-2. **Parses** job title, company, and description from the email
-3. **Filters** out non-job emails (profile views, newsletters, etc.)
-4. **Checks for duplicates** before creating any Notion entries
+2. **Filters** out non-job emails (profile views, newsletters, etc.) using keyword detection
+3. **Parses** job title, company, and description from the email
+4. **Checks for duplicates** by querying Notion before creating any new entries
 5. **Logs the job** to a Notion database with source, date, and job description
 6. **Calls the Claude API** with resume context to generate 3 tailored resume bullet points and a cover letter paragraph specific to each role
 7. **Writes the generated content** back to the Notion row, ready for review and application
+8. **Sends a push notification** via ntfy so you never miss a new listing
 
 ---
 
 ## Architecture
 
 ```
-Gmail (Indeed + LinkedIn)
-        │
-        ▼
-Code Node — Parse & Filter
-        │
-        ▼
-Notion — Duplicate Check (Get pages by job_id)
-        │
-        ▼
-IF Node — Skip if duplicate exists
-        │ (true = new job)
-        ▼
-Notion — Create database page
-        │
-        ▼
-HTTP Request — Claude API (resume tailoring)
-        │
-        ▼
-Notion — Update page with tailored_bullets + cover_letter
+Gmail (Indeed)      Gmail (LinkedIn)
+       │                   │
+       └─────────┬─────────┘
+                 ▼
+        Code Node — Parse & Filter
+                 │
+                 ▼
+        Notion — Duplicate Check
+        (Get pages by job_id)
+                 │
+                 ▼
+        IF Node — Skip if duplicate
+                 │ (true = new job)
+                 ▼
+        Notion — Create database page
+                 │
+                 ▼
+        HTTP Request — Claude API
+        (resume tailoring)
+                 │
+                 ▼
+        Notion — Update page
+        (tailored_bullets + cover_letter)
+                 │
+                 ▼
+        ntfy — Push notification
 ```
 
 ---
@@ -54,6 +62,7 @@ Notion — Update page with tailored_bullets + cover_letter
 | Job Sources | Indeed, LinkedIn |
 | Database | Notion API |
 | AI Tailoring | Anthropic Claude API (claude-sonnet-4-5) |
+| Notifications | ntfy |
 | Language | JavaScript (n8n Code node) |
 
 ---
@@ -77,26 +86,29 @@ Notion — Update page with tailored_bullets + cover_letter
 
 ## How It Works
 
-### Gmail Trigger
+### Gmail Triggers
 Two Gmail Trigger nodes poll every 15 minutes — one filtered to `donotreply@match.indeed.com` and one to `messages-noreply@linkedin.com`. Both feed into the same Code node.
 
 ### Parse & Filter (Code Node)
 The Code node:
 - Skips emails that don't contain job-related keywords (`hiring`, `job`, `administrator`, `support`, etc.)
-- Detects the source (Indeed vs LinkedIn) from the sender
+- Detects the source (Indeed vs LinkedIn) from the sender address
 - Parses job title and company — Indeed uses `"Job Title @ Company"` format; LinkedIn uses `"Job Title: Company and are hiring"`
 - Cleans LinkedIn snippet noise characters
 
 ### Duplicate Check
-Before creating any Notion entry, the pipeline queries the Job Applications database for an existing row with the same `job_id`. If one exists, the IF node routes to the false branch and the workflow stops — no duplicate created.
+Before creating any Notion entry, the pipeline queries the Job Applications database for an existing row with the same `job_id`. If one exists, the IF node routes to the false branch and the workflow stops silently.
 
 ### Claude API Tailoring
 The HTTP Request node calls `https://api.anthropic.com/v1/messages` with:
-- A system prompt containing Elijah's resume context, skills, and projects
+- A prompt containing the candidate's resume context, skills, and projects
 - The parsed job title, company, and description snippet
 - Instructions to respond in a strict `BULLETS: / COVER_LETTER:` format
 
 The response is split at the `COVER_LETTER:` marker and written to the appropriate Notion columns.
+
+### Push Notifications
+After the Notion row is updated, an HTTP Request node posts to ntfy with the job title, company, and source as the notification title. High priority so it surfaces immediately on your phone.
 
 ---
 
@@ -107,15 +119,17 @@ The response is split at the `COVER_LETTER:` marker and written to the appropria
 - Google Cloud project with Gmail API enabled
 - Notion integration token with access to your job tracking database
 - Anthropic API key
+- ntfy account or self-hosted ntfy instance
 
 ### Steps
-1. Clone or import the n8n workflow JSON
-2. Configure Gmail OAuth2 credential in n8n
+1. Import `Job_Tracker.json` into your n8n instance
+2. Configure Gmail OAuth2 credential in n8n (Google Cloud → Gmail API → OAuth2)
 3. Add Notion API key as a credential
-4. Add Anthropic API key as a header in the HTTP Request node
+4. Add your Anthropic API key to the HTTP Request node headers
 5. Update the Claude prompt with your own resume context
 6. Set your Notion database ID in the Notion nodes
-7. Activate the workflow
+7. Set your ntfy topic URL in the final HTTP Request node
+8. Activate the workflow
 
 ---
 
@@ -139,7 +153,8 @@ My hands-on experience managing a production homelab environment has given me pr
 
 ## Related Projects
 
-- [Self-Hosted Homelab](https://github.com/TechAsura) — Two-node Proxmox VE cluster running 10+ self-hosted services
+- [network-infrastructure](https://github.com/TechAsura/network-infrastructure) — GL.iNet Flint 3 router config, AdGuard Home DNS, static IP assignments, VLAN segmentation
+- [homelab-infrastructure](https://github.com/TechAsura/homelab-infrastructure) — Two-node Proxmox VE cluster running 10+ self-hosted services
 - [MapleLog](https://maplelog.co) — B2B SaaS compliance platform for Canadian SMBs
 
 ---
